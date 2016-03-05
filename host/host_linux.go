@@ -16,7 +16,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/tianlin/gopsutil/internal/common"
 )
 
 type LSB struct {

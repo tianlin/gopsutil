@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shirou/gopsutil/internal/common"
+	"github.com/tianlin/gopsutil/internal/common"
 )
 
 func LoadAvg() (*LoadAvgStat, error) {
@@ -40,7 +40,6 @@ func LoadAvg() (*LoadAvgStat, error) {
 
 	return ret, nil
 }
-
 
 // Misc returnes miscellaneous host-wide statistics.
 // Note: the name should be changed near future.
