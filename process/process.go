@@ -121,6 +121,7 @@ func (p *Process) CPUPercent(interval time.Duration) (float64, error) {
 		if err != nil {
 			return 0, err
 		}
+		now = time.Now()
 	} else {
 		if p.lastCPUTimes == nil {
 			// invoked first time
