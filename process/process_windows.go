@@ -335,7 +335,7 @@ func FiletimeToDuration(ft *syscall.Filetime) time.Duration {
 	return time.Duration(n*100) * time.Nanosecond
 }
 
-func (p *Process) CPUTimes() (*cpu.CPUTimesStat, error) {
+func (p *Process) Times() (*cpu.CPUTimesStat, error) {
 	handle, err := syscall.OpenProcess(syscall.PROCESS_QUERY_INFORMATION, false, uint32(p.Pid))
 
 	defer syscall.CloseHandle(handle)
