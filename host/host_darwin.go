@@ -15,13 +15,14 @@ import (
 	"unsafe"
 
 	"github.com/tianlin/gopsutil/internal/common"
+	"github.com/tianlin/gopsutil/process"
 )
 
 // from utmpx.h
 const USER_PROCESS = 7
 
-func HostInfo() (*HostInfoStat, error) {
-	ret := &HostInfoStat{
+func Info() (*InfoStat, error) {
+	ret := &InfoStat{
 		OS:             runtime.GOOS,
 		PlatformFamily: "darwin",
 	}
@@ -31,13 +32,22 @@ func HostInfo() (*HostInfoStat, error) {
 		ret.Hostname = hostname
 	}
 
-	platform, family, version, err := GetPlatformInformation()
+	uname, err := exec.LookPath("uname")
+	if err == nil {
+		out, err := invoke.Command(uname, "-r")
+		if err == nil {
+			ret.KernelVersion = strings.ToLower(strings.TrimSpace(string(out)))
+		}
+	}
+
+	platform, family, pver, err := PlatformInformation()
 	if err == nil {
 		ret.Platform = platform
 		ret.PlatformFamily = family
-		ret.PlatformVersion = version
+		ret.PlatformVersion = pver
 	}
-	system, role, err := GetVirtualization()
+
+	system, role, err := Virtualization()
 	if err == nil {
 		ret.VirtualizationSystem = system
 		ret.VirtualizationRole = role
@@ -49,10 +59,23 @@ func HostInfo() (*HostInfoStat, error) {
 		ret.Uptime = uptime(boot)
 	}
 
+	procs, err := process.Pids()
+	if err == nil {
+		ret.Procs = uint64(len(procs))
+	}
+
+	values, err := common.DoSysctrl("kern.uuid")
+	if err == nil && len(values) == 1 && values[0] != "" {
+		ret.HostID = strings.ToLower(values[0])
+	}
+
 	return ret, nil
 }
 
 func BootTime() (uint64, error) {
+	if cachedBootTime != 0 {
+		return cachedBootTime, nil
+	}
 	values, err := common.DoSysctrl("kern.boottime")
 	if err != nil {
 		return 0, err
@@ -63,8 +86,9 @@ func BootTime() (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
+	cachedBootTime = uint64(boottime)
 
-	return uint64(boottime), nil
+	return cachedBootTime, nil
 }
 
 func uptime(boot uint64) uint64 {
@@ -87,6 +111,7 @@ func Users() ([]UserStat, error) {
 	if err != nil {
 		return ret, err
 	}
+	defer file.Close()
 
 	buf, err := ioutil.ReadAll(file)
 	if err != nil {
@@ -122,25 +147,34 @@ func Users() ([]UserStat, error) {
 
 }
 
-func GetPlatformInformation() (string, string, string, error) {
+func PlatformInformation() (string, string, string, error) {
 	platform := ""
 	family := ""
-	version := ""
+	pver := ""
 
-	out, err := exec.Command("uname", "-s").Output()
+	sw_vers, err := exec.LookPath("sw_vers")
+	if err != nil {
+		return "", "", "", err
+	}
+	uname, err := exec.LookPath("uname")
+	if err != nil {
+		return "", "", "", err
+	}
+
+	out, err := invoke.Command(uname, "-s")
 	if err == nil {
 		platform = strings.ToLower(strings.TrimSpace(string(out)))
 	}
 
-	out, err = exec.Command("uname", "-r").Output()
+	out, err = invoke.Command(sw_vers, "-productVersion")
 	if err == nil {
-		version = strings.ToLower(strings.TrimSpace(string(out)))
+		pver = strings.ToLower(strings.TrimSpace(string(out)))
 	}
 
-	return platform, family, version, nil
+	return platform, family, pver, nil
 }
 
-func GetVirtualization() (string, string, error) {
+func Virtualization() (string, string, error) {
 	system := ""
 	role := ""
 

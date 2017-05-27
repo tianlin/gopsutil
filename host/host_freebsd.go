@@ -15,6 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/tianlin/gopsutil/internal/common"
+	"github.com/tianlin/gopsutil/process"
 )
 
 const (
@@ -23,8 +24,8 @@ const (
 	UTHostSize = 16
 )
 
-func HostInfo() (*HostInfoStat, error) {
-	ret := &HostInfoStat{
+func Info() (*InfoStat, error) {
+	ret := &InfoStat{
 		OS:             runtime.GOOS,
 		PlatformFamily: "freebsd",
 	}
@@ -34,13 +35,15 @@ func HostInfo() (*HostInfoStat, error) {
 		ret.Hostname = hostname
 	}
 
-	platform, family, version, err := GetPlatformInformation()
+	platform, family, version, err := PlatformInformation()
 	if err == nil {
 		ret.Platform = platform
 		ret.PlatformFamily = family
 		ret.PlatformVersion = version
+		ret.KernelVersion = version
 	}
-	system, role, err := GetVirtualization()
+
+	system, role, err := Virtualization()
 	if err == nil {
 		ret.VirtualizationSystem = system
 		ret.VirtualizationRole = role
@@ -52,10 +55,23 @@ func HostInfo() (*HostInfoStat, error) {
 		ret.Uptime = uptime(boot)
 	}
 
+	procs, err := process.Pids()
+	if err == nil {
+		ret.Procs = uint64(len(procs))
+	}
+
+	values, err := common.DoSysctrl("kern.hostuuid")
+	if err == nil && len(values) == 1 && values[0] != "" {
+		ret.HostID = strings.ToLower(values[0])
+	}
+
 	return ret, nil
 }
 
 func BootTime() (uint64, error) {
+	if cachedBootTime != 0 {
+		return cachedBootTime, nil
+	}
 	values, err := common.DoSysctrl("kern.boottime")
 	if err != nil {
 		return 0, err
@@ -67,6 +83,7 @@ func BootTime() (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
+	cachedBootTime = boottime
 
 	return boottime, nil
 }
@@ -95,19 +112,18 @@ func Users() ([]UserStat, error) {
 	if err != nil {
 		return ret, err
 	}
+	defer file.Close()
 
 	buf, err := ioutil.ReadAll(file)
 	if err != nil {
 		return ret, err
 	}
 
-	u := Utmpx{}
-	entrySize := int(unsafe.Sizeof(u)) - 3
-	entrySize = 197 // TODO: why should 197
+	entrySize := sizeOfUtmpx
 	count := len(buf) / entrySize
 
 	for i := 0; i < count; i++ {
-		b := buf[i*entrySize : i*entrySize+entrySize]
+		b := buf[i*sizeOfUtmpx : (i+1)*sizeOfUtmpx]
 		var u Utmpx
 		br := bytes.NewReader(b)
 		err := binary.Read(br, binary.LittleEndian, &u)
@@ -129,17 +145,21 @@ func Users() ([]UserStat, error) {
 
 }
 
-func GetPlatformInformation() (string, string, string, error) {
+func PlatformInformation() (string, string, string, error) {
 	platform := ""
 	family := ""
 	version := ""
+	uname, err := exec.LookPath("uname")
+	if err != nil {
+		return "", "", "", err
+	}
 
-	out, err := exec.Command("uname", "-s").Output()
+	out, err := invoke.Command(uname, "-s")
 	if err == nil {
 		platform = strings.ToLower(strings.TrimSpace(string(out)))
 	}
 
-	out, err = exec.Command("uname", "-r").Output()
+	out, err = invoke.Command(uname, "-r")
 	if err == nil {
 		version = strings.ToLower(strings.TrimSpace(string(out)))
 	}
@@ -147,7 +167,7 @@ func GetPlatformInformation() (string, string, string, error) {
 	return platform, family, version, nil
 }
 
-func GetVirtualization() (string, string, error) {
+func Virtualization() (string, string, error) {
 	system := ""
 	role := ""
 
@@ -161,6 +181,8 @@ func getUsersFromUtmp(utmpfile string) ([]UserStat, error) {
 	if err != nil {
 		return ret, err
 	}
+	defer file.Close()
+
 	buf, err := ioutil.ReadAll(file)
 	if err != nil {
 		return ret, err
@@ -189,4 +211,8 @@ func getUsersFromUtmp(utmpfile string) ([]UserStat, error) {
 	}
 
 	return ret, nil
+}
+
+func SensorsTemperatures() ([]TemperatureStat, error) {
+	return []TemperatureStat{}, common.ErrNotImplementedError
 }

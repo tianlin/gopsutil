@@ -1,11 +1,11 @@
-// +build linux freebsd darwin
+// +build linux freebsd openbsd darwin
 
 package process
 
 import (
 	"os"
-	"os/exec"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -29,15 +29,24 @@ func getTerminalMap() (map[uint64]string, error) {
 		}
 	}
 
+	var ptsnames []string
 	ptsd, err := os.Open("/dev/pts")
 	if err != nil {
-		return nil, err
+		ptsnames, _ = filepath.Glob("/dev/ttyp*")
+		if ptsnames == nil {
+			return nil, err
+		}
 	}
 	defer ptsd.Close()
 
-	ptsnames, err := ptsd.Readdirnames(-1)
-	for _, ptsname := range ptsnames {
-		termfiles = append(termfiles, "/dev/pts/"+ptsname)
+	if ptsnames == nil {
+		defer ptsd.Close()
+		ptsnames, err = ptsd.Readdirnames(-1)
+		for _, ptsname := range ptsnames {
+			termfiles = append(termfiles, "/dev/pts/"+ptsname)
+		}
+	} else {
+		termfiles = ptsnames
 	}
 
 	for _, name := range termfiles {
@@ -51,22 +60,15 @@ func getTerminalMap() (map[uint64]string, error) {
 	return ret, nil
 }
 
+// SendSignal sends a syscall.Signal to the process.
+// Currently, SIGSTOP, SIGCONT, SIGTERM and SIGKILL are supported.
 func (p *Process) SendSignal(sig syscall.Signal) error {
-	sigAsStr := "INT"
-	switch sig {
-	case syscall.SIGSTOP:
-		sigAsStr = "STOP"
-	case syscall.SIGCONT:
-		sigAsStr = "CONT"
-	case syscall.SIGTERM:
-		sigAsStr = "TERM"
-	case syscall.SIGKILL:
-		sigAsStr = "KILL"
+	process, err := os.FindProcess(int(p.Pid))
+	if err != nil {
+		return err
 	}
 
-	cmd := exec.Command("kill", "-s", sigAsStr, strconv.Itoa(int(p.Pid)))
-	cmd.Stderr = os.Stderr
-	err := cmd.Run()
+	err = process.Signal(sig)
 	if err != nil {
 		return err
 	}
@@ -74,18 +76,27 @@ func (p *Process) SendSignal(sig syscall.Signal) error {
 	return nil
 }
 
+// Suspend sends SIGSTOP to the process.
 func (p *Process) Suspend() error {
 	return p.SendSignal(syscall.SIGSTOP)
 }
+
+// Resume sends SIGCONT to the process.
 func (p *Process) Resume() error {
 	return p.SendSignal(syscall.SIGCONT)
 }
+
+// Terminate sends SIGTERM to the process.
 func (p *Process) Terminate() error {
 	return p.SendSignal(syscall.SIGTERM)
 }
+
+// Kill sends SIGKILL to the process.
 func (p *Process) Kill() error {
 	return p.SendSignal(syscall.SIGKILL)
 }
+
+// Username returns a username of the process.
 func (p *Process) Username() (string, error) {
 	uids, err := p.Uids()
 	if err != nil {

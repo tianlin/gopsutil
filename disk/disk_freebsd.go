@@ -5,6 +5,7 @@ package disk
 import (
 	"bytes"
 	"encoding/binary"
+	"path"
 	"strconv"
 	"syscall"
 	"unsafe"
@@ -12,8 +13,8 @@ import (
 	"github.com/tianlin/gopsutil/internal/common"
 )
 
-func DiskPartitions(all bool) ([]DiskPartitionStat, error) {
-	var ret []DiskPartitionStat
+func Partitions(all bool) ([]PartitionStat, error) {
+	var ret []PartitionStat
 
 	// get length
 	count, err := syscall.Getfsstat(nil, MNT_WAIT)
@@ -75,22 +76,28 @@ func DiskPartitions(all bool) ([]DiskPartitionStat, error) {
 			opts += ",nfs4acls"
 		}
 
-		d := DiskPartitionStat{
+		d := PartitionStat{
 			Device:     common.IntToString(stat.Mntfromname[:]),
 			Mountpoint: common.IntToString(stat.Mntonname[:]),
 			Fstype:     common.IntToString(stat.Fstypename[:]),
 			Opts:       opts,
 		}
+		if all == false {
+			if !path.IsAbs(d.Device) || !common.PathExists(d.Device) {
+				continue
+			}
+		}
+
 		ret = append(ret, d)
 	}
 
 	return ret, nil
 }
 
-func DiskIOCounters() (map[string]DiskIOCountersStat, error) {
+func IOCounters(names ...string) (map[string]IOCountersStat, error) {
 	// statinfo->devinfo->devstat
 	// /usr/include/devinfo.h
-	ret := make(map[string]DiskIOCountersStat)
+	ret := make(map[string]IOCountersStat)
 
 	r, err := syscall.Sysctl("kern.devstat.all")
 	if err != nil {
@@ -99,14 +106,12 @@ func DiskIOCounters() (map[string]DiskIOCountersStat, error) {
 	buf := []byte(r)
 	length := len(buf)
 
-	ds := Devstat{}
-	devstatLen := int(unsafe.Sizeof(ds))
-	count := int(uint64(length) / uint64(devstatLen))
+	count := int(uint64(length) / uint64(sizeOfDevstat))
 
 	buf = buf[8:] // devstat.all has version in the head.
 	// parse buf to Devstat
 	for i := 0; i < count; i++ {
-		b := buf[i*devstatLen : i*devstatLen+devstatLen]
+		b := buf[i*sizeOfDevstat : i*sizeOfDevstat+sizeOfDevstat]
 		d, err := parseDevstat(b)
 		if err != nil {
 			continue
@@ -114,13 +119,18 @@ func DiskIOCounters() (map[string]DiskIOCountersStat, error) {
 		un := strconv.Itoa(int(d.Unit_number))
 		name := common.IntToString(d.Device_name[:]) + un
 
-		ds := DiskIOCountersStat{
+		if len(names) > 0 && !common.StringsHas(names, name) {
+			continue
+		}
+
+		ds := IOCountersStat{
 			ReadCount:  d.Operations[DEVSTAT_READ],
 			WriteCount: d.Operations[DEVSTAT_WRITE],
 			ReadBytes:  d.Bytes[DEVSTAT_READ],
 			WriteBytes: d.Bytes[DEVSTAT_WRITE],
-			ReadTime:   d.Duration[DEVSTAT_READ].Compute(),
-			WriteTime:  d.Duration[DEVSTAT_WRITE].Compute(),
+			ReadTime:   uint64(d.Duration[DEVSTAT_READ].Compute() * 1000),
+			WriteTime:  uint64(d.Duration[DEVSTAT_WRITE].Compute() * 1000),
+			IoTime:     uint64(d.Busy_time.Compute() * 1000),
 			Name:       name,
 		}
 		ret[name] = ds
@@ -129,9 +139,9 @@ func DiskIOCounters() (map[string]DiskIOCountersStat, error) {
 	return ret, nil
 }
 
-func (b Bintime) Compute() uint64 {
+func (b Bintime) Compute() float64 {
 	BINTIME_SCALE := 5.42101086242752217003726400434970855712890625e-20
-	return uint64(b.Sec) + b.Frac*uint64(BINTIME_SCALE)
+	return float64(b.Sec) + float64(b.Frac)*BINTIME_SCALE
 }
 
 // BT2LD(time)     ((long double)(time).sec + (time).frac * BINTIME_SCALE)

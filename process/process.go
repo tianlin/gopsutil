@@ -20,13 +20,14 @@ type Process struct {
 	Pid            int32 `json:"pid"`
 	name           string
 	status         string
+	parent         int32
 	numCtxSwitches *NumCtxSwitchesStat
 	uids           []int32
 	gids           []int32
 	numThreads     int32
 	memInfo        *MemoryInfoStat
 
-	lastCPUTimes *cpu.CPUTimesStat
+	lastCPUTimes *cpu.TimesStat
 	lastCPUTime  time.Time
 }
 
@@ -48,16 +49,37 @@ type RlimitStat struct {
 }
 
 type IOCountersStat struct {
-	ReadCount  uint64 `json:"read_count"`
-	WriteCount uint64 `json:"write_count"`
-	ReadBytes  uint64 `json:"read_bytes"`
-	WriteBytes uint64 `json:"write_bytes"`
+	ReadCount  uint64 `json:"readCount"`
+	WriteCount uint64 `json:"writeCount"`
+	ReadBytes  uint64 `json:"readBytes"`
+	WriteBytes uint64 `json:"writeBytes"`
 }
 
 type NumCtxSwitchesStat struct {
 	Voluntary   int64 `json:"voluntary"`
 	Involuntary int64 `json:"involuntary"`
 }
+
+// Resource limit constants are from /usr/include/x86_64-linux-gnu/bits/resource.h
+// from libc6-dev package in Ubuntu 16.10
+const (
+	RLIMIT_CPU        int32 = 0
+	RLIMIT_FSIZE      int32 = 1
+	RLIMIT_DATA       int32 = 2
+	RLIMIT_STACK      int32 = 3
+	RLIMIT_CORE       int32 = 4
+	RLIMIT_RSS        int32 = 5
+	RLIMIT_NPROC      int32 = 6
+	RLIMIT_NOFILE     int32 = 7
+	RLIMIT_MEMLOCK    int32 = 8
+	RLIMIT_AS         int32 = 9
+	RLIMIT_LOCKS      int32 = 10
+	RLIMIT_SIGPENDING int32 = 11
+	RLIMIT_MSGQUEUE   int32 = 12
+	RLIMIT_NICE       int32 = 13
+	RLIMIT_RTPRIO     int32 = 14
+	RLIMIT_RTTIME     int32 = 15
+)
 
 func (p Process) String() string {
 	s, _ := json.Marshal(p)
@@ -106,8 +128,8 @@ func PidExists(pid int32) (bool, error) {
 
 // If interval is 0, return difference from last call(non-blocking).
 // If interval > 0, wait interval sec and return diffrence between start and end.
-func (p *Process) CPUPercent(interval time.Duration) (float64, error) {
-	cpuTimes, err := p.CPUTimes()
+func (p *Process) Percent(interval time.Duration) (float64, error) {
+	cpuTimes, err := p.Times()
 	if err != nil {
 		return 0, err
 	}
@@ -117,7 +139,8 @@ func (p *Process) CPUPercent(interval time.Duration) (float64, error) {
 		p.lastCPUTimes = cpuTimes
 		p.lastCPUTime = now
 		time.Sleep(interval)
-		cpuTimes, err = p.CPUTimes()
+		cpuTimes, err = p.Times()
+		now = time.Now()
 		if err != nil {
 			return 0, err
 		}
@@ -139,7 +162,7 @@ func (p *Process) CPUPercent(interval time.Duration) (float64, error) {
 	return ret, nil
 }
 
-func calculatePercent(t1, t2 *cpu.CPUTimesStat, delta float64, numcpu int) float64 {
+func calculatePercent(t1, t2 *cpu.TimesStat, delta float64, numcpu int) float64 {
 	if delta == 0 {
 		return 0
 	}

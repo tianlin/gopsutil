@@ -7,15 +7,14 @@ import (
 	"net"
 	"os"
 	"syscall"
-	"unsafe"
 
 	"github.com/tianlin/gopsutil/internal/common"
 )
 
 var (
 	modiphlpapi             = syscall.NewLazyDLL("iphlpapi.dll")
-	procGetExtendedTcpTable = modiphlpapi.NewProc("GetExtendedTcpTable")
-	procGetExtendedUdpTable = modiphlpapi.NewProc("GetExtendedUdpTable")
+	procGetExtendedTCPTable = modiphlpapi.NewProc("GetExtendedTcpTable")
+	procGetExtendedUDPTable = modiphlpapi.NewProc("GetExtendedUdpTable")
 )
 
 const (
@@ -30,80 +29,60 @@ const (
 	TCPTableOwnerModuleAll
 )
 
-func NetIOCounters(pernic bool) ([]NetIOCountersStat, error) {
+func IOCounters(pernic bool) ([]IOCountersStat, error) {
 	ifs, err := net.Interfaces()
 	if err != nil {
 		return nil, err
 	}
-
-	ai, err := getAdapterList()
-	if err != nil {
-		return nil, err
-	}
-	var ret []NetIOCountersStat
+	var ret []IOCountersStat
 
 	for _, ifi := range ifs {
-		name := ifi.Name
-		for ; ai != nil; ai = ai.Next {
-			name = common.BytePtrToString(&ai.Description[0])
-			c := NetIOCountersStat{
-				Name: name,
-			}
-
-			row := syscall.MibIfRow{Index: ai.Index}
-			e := syscall.GetIfEntry(&row)
-			if e != nil {
-				return nil, os.NewSyscallError("GetIfEntry", e)
-			}
-			c.BytesSent = uint64(row.OutOctets)
-			c.BytesRecv = uint64(row.InOctets)
-			c.PacketsSent = uint64(row.OutUcastPkts)
-			c.PacketsRecv = uint64(row.InUcastPkts)
-			c.Errin = uint64(row.InErrors)
-			c.Errout = uint64(row.OutErrors)
-			c.Dropin = uint64(row.InDiscards)
-			c.Dropout = uint64(row.OutDiscards)
-
-			ret = append(ret, c)
+		c := IOCountersStat{
+			Name: ifi.Name,
 		}
+
+		row := syscall.MibIfRow{Index: uint32(ifi.Index)}
+		e := syscall.GetIfEntry(&row)
+		if e != nil {
+			return nil, os.NewSyscallError("GetIfEntry", e)
+		}
+		c.BytesSent = uint64(row.OutOctets)
+		c.BytesRecv = uint64(row.InOctets)
+		c.PacketsSent = uint64(row.OutUcastPkts)
+		c.PacketsRecv = uint64(row.InUcastPkts)
+		c.Errin = uint64(row.InErrors)
+		c.Errout = uint64(row.OutErrors)
+		c.Dropin = uint64(row.InDiscards)
+		c.Dropout = uint64(row.OutDiscards)
+
+		ret = append(ret, c)
 	}
 
 	if pernic == false {
-		return getNetIOCountersAll(ret)
+		return getIOCountersAll(ret)
 	}
 	return ret, nil
 }
 
 // NetIOCountersByFile is an method which is added just a compatibility for linux.
-func NetIOCountersByFile(pernic bool, filename string) ([]NetIOCountersStat, error) {
-	return NetIOCounters(pernic)
+func IOCountersByFile(pernic bool, filename string) ([]IOCountersStat, error) {
+	return IOCounters(pernic)
 }
 
 // Return a list of network connections opened by a process
-func NetConnections(kind string) ([]NetConnectionStat, error) {
-	var ret []NetConnectionStat
+func Connections(kind string) ([]ConnectionStat, error) {
+	var ret []ConnectionStat
 
-	return ret, common.NotImplementedError
+	return ret, common.ErrNotImplementedError
 }
 
-// borrowed from src/pkg/net/interface_windows.go
-func getAdapterList() (*syscall.IpAdapterInfo, error) {
-	b := make([]byte, 1000)
-	l := uint32(len(b))
-	a := (*syscall.IpAdapterInfo)(unsafe.Pointer(&b[0]))
-	err := syscall.GetAdaptersInfo(a, &l)
-	if err == syscall.ERROR_BUFFER_OVERFLOW {
-		b = make([]byte, l)
-		a = (*syscall.IpAdapterInfo)(unsafe.Pointer(&b[0]))
-		err = syscall.GetAdaptersInfo(a, &l)
-	}
-	if err != nil {
-		return nil, os.NewSyscallError("GetAdaptersInfo", err)
-	}
-	return a, nil
+// Return a list of network connections opened returning at most `max`
+// connections for each running process.
+func ConnectionsMax(kind string, max int) ([]ConnectionStat, error) {
+	return []ConnectionStat{}, common.ErrNotImplementedError
 }
 
-func NetFilterCounters() ([]NetFilterStat, error) {
+func FilterCounters() ([]FilterStat, error) {
 	return nil, errors.New("NetFilterCounters not implemented for windows")
 }
 
@@ -111,6 +90,6 @@ func NetFilterCounters() ([]NetFilterStat, error) {
 // If protocols is empty then all protocols are returned, otherwise
 // just the protocols in the list are returned.
 // Not Implemented for Windows
-func NetProtoCounters(protocols []string) ([]NetProtoCountersStat, error) {
+func ProtoCounters(protocols []string) ([]ProtoCountersStat, error) {
 	return nil, errors.New("NetProtoCounters not implemented for windows")
 }
