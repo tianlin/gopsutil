@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"github.com/tianlin/gopsutil/internal/common"
 )
 
 var (
