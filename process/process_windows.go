@@ -3,25 +3,25 @@
 package process
 
 import (
-"errors"
-"fmt"
-"strings"
-"syscall"
-"time"
-"unsafe"
+	"errors"
+	"fmt"
+	"strings"
+	"syscall"
+	"time"
+	"unsafe"
 
-"github.com/StackExchange/wmi"
-"github.com/tianlin/w32"
+	"github.com/StackExchange/wmi"
+	"github.com/tianlin/w32"
 
-cpu "github.com/tianlin/gopsutil/cpu"
-"github.com/tianlin/gopsutil/internal/common"
-net "github.com/tianlin/gopsutil/net"
+	cpu "github.com/tianlin/gopsutil/cpu"
+	"github.com/tianlin/gopsutil/internal/common"
+	net "github.com/tianlin/gopsutil/net"
 )
 
 const (
-NoMoreFiles        = 0x12
-MaxPathLength      = 260
-PROCESS_ALL_ACCESS = 0x001f0fff
+	NoMoreFiles        = 0x12
+	MaxPathLength      = 260
+	PROCESS_ALL_ACCESS = 0x001f0fff
 )
 
 var (
@@ -335,7 +335,7 @@ func FiletimeToDuration(ft *syscall.Filetime) time.Duration {
 	return time.Duration(n*100) * time.Nanosecond
 }
 
-func (p *Process) Times() (*cpu.CPUTimesStat, error) {
+func (p *Process) Times() (*cpu.TimesStat, error) {
 	handle, err := syscall.OpenProcess(syscall.PROCESS_QUERY_INFORMATION, false, uint32(p.Pid))
 
 	defer syscall.CloseHandle(handle)
@@ -350,7 +350,7 @@ func (p *Process) Times() (*cpu.CPUTimesStat, error) {
 		return nil, fmt.Errorf("GetProcessTimes fails with %v", err)
 	}
 
-	stat := cpu.CPUTimesStat{
+	stat := cpu.TimesStat{
 		User:   float64(FiletimeToDuration(&CPU.UserTime).Seconds()),
 		System: float64(FiletimeToDuration(&CPU.KernelTime).Seconds()),
 	}
