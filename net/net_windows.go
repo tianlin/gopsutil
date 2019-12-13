@@ -86,7 +86,7 @@ type guid struct {
 const (
 	maxStringSize        = 256
 	maxPhysAddressLength = 32
-	pad0for64_4for32     = 0
+	pad0for64_4for32     = 4
 )
 
 func IOCounters(pernic bool) ([]IOCountersStat, error) {
